@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>somun hub</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;400;500;600;800&display=swap" rel="stylesheet">
+<!--
+  somun hub: o painel de administração do somun (decidido com ela em 25/11).
+  Só a administração entra (as regras do Firestore só deixam a conta do somun ler).
+  - Igrejas: cada conta grava um "sinal de vida" (sinais/<conta>) ao abrir o live, o tela e o Diretor:
+    quando usou e a versão instalada. Aqui aparece a lista, com uma anotação da administração
+    (hubNotas/<conta>).
+  - Relatos: o "Relatar problema" de todos os programas (relatos), com resolvido e apagar.
+-->
+<style>
+:root{--bg:#141414;--panel:#1c1c1c;--panel2:#232323;--line:#2a2a2a;--line2:#3a3a3a;--text:#f2f2f2;--gray:#8c8c8c;--gray2:#a8a8a8;--red:#e5483b}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Outfit,system-ui,sans-serif;font-size:15px}
+button,input,textarea{font-family:inherit;font-size:14px;color:inherit}
+header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.icone{display:inline-flex;align-items:center;height:30px;padding:0 8px;border-radius:7px;background:#232323;border:1px solid #3a3a3a;font-weight:800;font-size:16px;letter-spacing:-.3px}
+.icone i{width:5px;height:5px;border-radius:50%;background:var(--red);margin-left:1px;align-self:flex-end;margin-bottom:9px}
+.abas{display:flex;gap:4px}
+.aba{background:transparent;border:1px solid transparent;border-radius:8px;padding:6px 12px;color:var(--gray2);cursor:pointer}
+.aba.on{border-color:var(--line2);background:var(--panel2);color:var(--text)}
+.esp{flex:1}
+.muted{color:var(--gray2)}.small{font-size:12px}
+.btn{background:var(--line);border:0;border-radius:8px;min-height:36px;padding:0 14px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--line2)}
+.btn.ok{background:#fff;color:#141414}
+.btn.link{background:transparent;color:var(--gray2);font-weight:500}
+.btn.link:hover{color:var(--text)}
+main{padding:20px 22px;max-width:1100px;margin:0 auto}
+#login{display:none;min-height:80vh;align-items:center;justify-content:center}
+.caixa{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:22px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
+.caixa input{background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:10px;width:100%}
+.caixa input:focus,textarea:focus{outline:none;border-color:var(--gray2)}
+.erro{color:var(--red);font-size:14px;min-height:18px}
+table{width:100%;border-collapse:collapse}
+th{font-weight:500;color:var(--gray);font-size:12px;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+td .v{color:var(--gray2);font-size:12px}
+.velha{color:var(--text)}
+.nota{width:100%;min-width:180px;background:transparent;border:1px solid transparent;border-radius:6px;padding:6px;resize:vertical;min-height:32px;color:var(--text)}
+.nota:hover{border-color:var(--line2)}
+.nota:focus{border-color:var(--gray2);background:var(--panel)}
+.vazio{color:var(--gray2);text-align:center;padding:40px 16px}
+.cards{display:flex;flex-direction:column;gap:12px;max-width:780px}
+.card{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card.feito{opacity:.6}
+.cab{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.txt{white-space:pre-wrap;line-height:1.45}
+.print{max-width:100%;max-height:320px;border-radius:6px;border:1px solid var(--line2)}
+pre{white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:300px;overflow:auto;background:var(--bg);padding:8px;border-radius:6px;color:var(--gray2);margin:6px 0 0}
+.linha{display:flex;gap:8px;justify-content:flex-end}
+.resumo{display:flex;gap:24px;margin-bottom:18px;flex-wrap:wrap}
+.resumo b{font-size:22px;font-weight:600;display:block}
+@media (max-width:760px){ .tab-igrejas thead{display:none} .tab-igrejas td{display:block;border:0;padding:4px 0} .tab-igrejas tr{display:block;border-bottom:1px solid var(--line);padding:10px 0} }
+</style>
+</head>
+<body>
+<script src="firebase-config.js"></script>
+<header>
+  <span class="icone">hub<i></i></span>
+  <nav class="abas" id="abas" style="display:none">
+    <button class="aba on" data-aba="igrejas">Igrejas</button>
+    <button class="aba" data-aba="relatos">Relatos</button>
+  </nav>
+  <span class="esp"></span>
+  <span class="muted small" id="quem"></span>
+  <button class="btn link" id="sair" style="display:none">Sair</button>
+</header>
+<div id="login">
+  <form class="caixa" id="loginForm">
+    <div style="font-weight:600;font-size:17px">Entrar no hub</div>
+    <div class="muted small">Só a conta da administração do somun.</div>
+    <input id="email" type="email" placeholder="E-mail" autocomplete="username" required>
+    <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <div class="erro" id="erro"></div>
+    <button class="btn ok" type="submit">Entrar</button>
+  </form>
+</div>
+<main id="conteudo" style="display:none"></main>
+
+<script type="module">
+const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+const [{ initializeApp }, A, F] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')]);
+const app = initializeApp(window.PL_FIREBASE);
+const auth = A.getAuth(app);
+const db = F.getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let aba = 'igrejas';
+let sinais = [], notas = {}, relatos = [], verResolvidos = false;
+let parar = [];
+
+function quando(ts) {
+  const d = ts && ts.toDate ? ts.toDate() : (typeof ts === 'string' ? new Date(ts) : null);
+  if (!d || isNaN(d)) return '';
+  const dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (dias <= 0 && new Date().toDateString() === d.toDateString()) return 'hoje ' + hora;
+  if (dias <= 1) return 'ontem ' + hora;
+  if (dias < 7) return 'há ' + dias + ' dias';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+function stamp(ts) { const d = ts && ts.toDate ? ts.toDate() : (typeof ts === 'string' ? new Date(ts) : null); return d && !isNaN(d) ? d.getTime() : 0; }
+
+function render() {
+  document.querySelectorAll('.aba').forEach((b) => b.classList.toggle('on', b.dataset.aba === aba));
+  const abertos = relatos.filter((r) => !r.resolvido).length;
+  document.querySelector('[data-aba="relatos"]').textContent = 'Relatos' + (abertos ? ' · ' + abertos : '');
+  $('conteudo').innerHTML = aba === 'igrejas' ? igrejas() : listaRelatos();
+}
+
+function igrejas() {
+  if (!sinais.length) return '<div class="vazio">Nenhuma igreja deu sinal ainda. Cada programa grava ao abrir, com a conta conectada.</div>';
+  const mais = Math.max(0, ...sinais.flatMap((s) => [parseInt(s.live?.versao) || 0, parseInt(s.tela?.versao) || 0]));
+  const semana = Date.now() - 7 * 86400000;
+  const ativas = sinais.filter((s) => Math.max(stamp(s.live?.em), stamp(s.tela?.em), stamp(s.diretor?.em)) > semana).length;
+  const lista = [...sinais].sort((a, b) => Math.max(stamp(b.live?.em), stamp(b.tela?.em), stamp(b.diretor?.em)) - Math.max(stamp(a.live?.em), stamp(a.tela?.em), stamp(a.diretor?.em)));
+  const versao = (v) => v ? (parseInt(v) < mais ? '<span class="v">versão ' + esc(v) + ' · <span class="velha">desatualizada</span></span>' : '<span class="v">versão ' + esc(v) + '</span>') : '';
+  const uso = (p) => p?.em ? esc(quando(p.em)) + (p.versao !== undefined ? '<br>' + versao(p.versao) : '') : '<span class="v">—</span>';
+  return '<div class="resumo"><div><b>' + sinais.length + '</b><span class="muted small">igrejas</span></div><div><b>' + ativas + '</b><span class="muted small">usaram nos últimos 7 dias</span></div>' +
+    (mais ? '<div><b>' + mais + '</b><span class="muted small">versão mais nova em uso</span></div>' : '') + '</div>' +
+    '<table class="tab-igrejas"><thead><tr><th>Conta</th><th>live</th><th>tela</th><th>Diretor</th><th>Anotação</th></tr></thead><tbody>' +
+    lista.map((s) => '<tr><td>' + esc(s.email || s.id) + '</td><td>' + uso(s.live) + '</td><td>' + uso(s.tela) + '</td><td>' + (s.diretor?.em ? esc(quando(s.diretor.em)) : '<span class="v">—</span>') + '</td>' +
+      '<td><textarea class="nota" data-nota="' + esc(s.id) + '" rows="1" placeholder="anotar…">' + esc(notas[s.id] || '') + '</textarea></td></tr>').join('') +
+    '</tbody></table>';
+}
+
+function listaRelatos() {
+  const nomes = { live: 'somun live', tela: 'somun tela', diretor: 'Diretor', cam: 'somun cam (navegador)' };
+  const card = (r) => '<div class="card' + (r.resolvido ? ' feito' : '') + '">' +
+    '<div class="cab"><b>' + esc(nomes[r.app] || r.app || '?') + '</b><span class="muted small">' + esc(quando(r.em)) + (r.versao ? ' · versão ' + esc(r.versao) : '') + '</span></div>' +
+    '<div class="txt">' + esc(r.texto || '') + '</div>' +
+    ((r.conta || r.contato) ? '<div class="muted small">' + esc([r.conta, r.contato].filter(Boolean).join(' · ')) + '</div>' : '') +
+    (r.print ? '<a href="#" data-abrir="' + esc(r.id) + '"><img class="print" src="' + esc(r.print) + '" alt="Print da tela"></a>' : '') +
+    '<details><summary class="muted small">Registro técnico</summary><pre>' + esc((r.sistema ? r.sistema + '\n\n' : '') + (r.registro || '')) + '</pre></details>' +
+    '<div class="linha">' + (r.resolvido ? '<button class="btn" data-rl="reabrir" data-id="' + esc(r.id) + '">Reabrir</button>' : '<button class="btn" data-rl="resolvido" data-id="' + esc(r.id) + '">Resolvido</button>') +
+    '<button class="btn link" data-rl="apagar" data-id="' + esc(r.id) + '">Apagar</button></div></div>';
+  const abertos = relatos.filter((r) => !r.resolvido), feitos = relatos.filter((r) => r.resolvido);
+  let h = '<div class="cards">' + (abertos.length ? abertos.map(card).join('') : '<div class="vazio">Nenhum problema aberto.</div>');
+  if (feitos.length) {
+    h += '<button class="btn link" data-rl="ver">' + (verResolvidos ? 'Esconder' : 'Ver') + ' os resolvidos (' + feitos.length + ')</button>';
+    if (verResolvidos) h += feitos.map(card).join('');
+  }
+  return h + '</div>';
+}
+
+function ouvir() {
+  parar.forEach((f) => f()); parar = [];
+  const falha = (e) => { $('conteudo').innerHTML = '<div class="vazio">Esta conta não tem acesso ao hub (' + esc(e && e.code || e) + ').</div>'; };
+  parar.push(F.onSnapshot(F.collection(db, 'sinais'), (snap) => { sinais = snap.docs.map((d) => ({ id: d.id, ...d.data() })); if (!document.activeElement?.dataset?.nota) render(); }, falha));
+  parar.push(F.onSnapshot(F.collection(db, 'hubNotas'), (snap) => { notas = {}; snap.forEach((d) => (notas[d.id] = d.data().nota || '')); if (!document.activeElement?.dataset?.nota) render(); }, () => {}));
+  parar.push(F.onSnapshot(F.collection(db, 'relatos'), (snap) => { relatos = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => stamp(b.em) - stamp(a.em)); render(); }, () => {}));
+}
+
+$('loginForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('erro').textContent = '';
+  A.signInWithEmailAndPassword(auth, $('email').value.trim(), $('senha').value).catch((err) => {
+    const c = String(err && err.code || '');
+    $('erro').textContent = /invalid-credential|wrong-password|user-not-found|invalid-email/.test(c) ? 'E-mail ou senha errados.' : /network/.test(c) ? 'Sem internet agora.' : 'Não deu para entrar (' + c + ').';
+  });
+});
+$('sair').addEventListener('click', () => A.signOut(auth));
+A.onAuthStateChanged(auth, (user) => {
+  const dentro = !!user;
+  $('login').style.display = dentro ? 'none' : 'flex';
+  $('conteudo').style.display = dentro ? '' : 'none';
+  $('abas').style.display = dentro ? '' : 'none';
+  $('sair').style.display = dentro ? '' : 'none';
+  $('quem').textContent = user ? user.email : '';
+  if (user) { $('conteudo').innerHTML = '<div class="vazio">Carregando…</div>'; ouvir(); }
+  else { parar.forEach((f) => f()); parar = []; }
+});
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  const b = t.closest('[data-aba]'); if (b) { aba = b.dataset.aba; return render(); }
+  const ab = t.closest('[data-abrir]');
+  if (ab) { e.preventDefault(); const r = relatos.find((x) => x.id === ab.dataset.abrir); if (r) { const w = window.open(); if (w) w.document.write('<body style="margin:0;background:#000"><img src="' + r.print + '" style="max-width:100%">'); } return; }
+  const rl = t.closest('[data-rl]'); if (!rl) return;
+  const a = rl.dataset.rl;
+  if (a === 'ver') { verResolvidos = !verResolvidos; return render(); }
+  if (a === 'resolvido' || a === 'reabrir') return F.updateDoc(F.doc(db, 'relatos', rl.dataset.id), { resolvido: a === 'resolvido' });
+  if (a === 'apagar' && confirm('Apagar este relato? Some de vez.')) F.deleteDoc(F.doc(db, 'relatos', rl.dataset.id));
+});
+// Anotação: grava ao sair do campo.
+document.addEventListener('focusout', (e) => {
+  const n = e.target.closest && e.target.closest('[data-nota]'); if (!n) return;
+  const texto = n.value.trim();
+  if ((notas[n.dataset.nota] || '') === texto) return;
+  notas[n.dataset.nota] = texto;
+  F.setDoc(F.doc(db, 'hubNotas', n.dataset.nota), { nota: texto, em: F.serverTimestamp() });
+});
+</script>
+</body>
+</html>
